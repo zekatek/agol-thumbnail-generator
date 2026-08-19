@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>City of South Pasadena - AGOL Thumbnail Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --sp-slate: #385A66;
+      --sp-dark-slate: #243B43;
+      --sp-gold: #EDC638;
+      --sp-gold-hover: #D9B32B;
+      --sp-bg: #F4F6F8;
+      --sp-card-bg: #FFFFFF;
+      --sp-text: #1E293B;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Montserrat', system-ui, sans-serif;
+      background-color: var(--sp-bg);
+      color: var(--sp-text);
+      padding: 24px;
+    }
+
+    header {
+      background-color: var(--sp-slate);
+      color: white;
+      padding: 16px 24px;
+      border-bottom: 4px solid var(--sp-gold);
+      border-radius: 8px 8px 0 0;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+    header span { font-size: 13px; background: rgba(255,255,255,0.15); padding: 4px 10px; border-radius: 4px; }
+
+    .app-container {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .panel {
+      background: var(--sp-card-bg);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; color: var(--sp-slate); letter-spacing: 0.5px; }
+    input[type="text"], select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #CBD5E1;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+    input[type="text"]:focus, select:focus {
+      border-color: var(--sp-slate);
+      box-shadow: 0 0 0 2px rgba(56, 90, 102, 0.2);
+    }
+    input[type="file"] { font-size: 12px; }
+
+    .preview-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    canvas {
+      width: 100%;
+      max-width: 600px;
+      height: auto;
+      border-radius: 6px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+      background: #e2e8f0;
+    }
+
+    .btn-download {
+      margin-top: 20px;
+      background-color: var(--sp-gold);
+      color: var(--sp-dark-slate);
+      font-family: inherit;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 12px 28px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.1s ease;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .btn-download:hover { background-color: var(--sp-gold-hover); transform: translateY(-1px); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>CITY OF SOUTH PASADENA</h1>
+    <span>ArcGIS Online Thumbnail Generator</span>
+  </header>
+
+  <div class="app-container">
+    <!-- Controls Panel -->
+    <div class="panel">
+      <div class="form-group">
+        <label for="layerTitle">Layer Title</label>
+        <input type="text" id="layerTitle" value="2026 Zoning & Land Use" oninput="renderCanvas()">
+      </div>
+
+      <div class="form-group">
+        <label for="categoryTag">Category Tag</label>
+        <input type="text" id="categoryTag" value="PLANNING & ZONING" oninput="renderCanvas()">
+      </div>
+
+      <div class="form-group">
+        <label for="accentColor">Accent Color</label>
+        <select id="accentColor" onchange="renderCanvas()">
+          <option value="#EDC638">South Pasadena Gold (#EDC638)</option>
+          <option value="#F26522">South Pasadena Orange (#F26522)</option>
+          <option value="#FFFFFF">Clean White (#FFFFFF)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="bgUpload">Map Background Screenshot</label>
+        <input type="file" id="bgUpload" accept="image/*" onchange="handleBgUpload(event)">
+      </div>
+
+      <div class="form-group">
+        <label for="sealUrl">City Seal Image Path or URL</label>
+        <input type="text" id="sealUrl" value="seal.png" placeholder="seal.png or https://..." onchange="loadSealFromUrl()">
+      </div>
+
+      <div class="form-group">
+        <label for="sealUpload">Or Upload Local Seal PNG</label>
+        <input type="file" id="sealUpload" accept="image/*" onchange="handleSealUpload(event)">
+      </div>
+    </div>
+
+    <!-- Live Preview Panel -->
+    <div class="panel preview-container">
+      <canvas id="thumbCanvas" width="600" height="400"></canvas>
+      <button class="btn-download" onclick="downloadThumbnail()">Download AGOL Thumbnail (600x400)</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('thumbCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let bgImg = null;
+    let sealImg = new Image();
+
+    function loadSealFromUrl() {
+      const url = document.getElementById('sealUrl').value;
+      if (!url) return;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        sealImg = img;
+        renderCanvas();
+      };
+      const cacheBuster = url.includes('?') ? '&v=' : '?v=';
+      img.src = url + cacheBuster + new Date().getTime();
+    }
+
+    function handleBgUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => { bgImg = img; renderCanvas(); };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleSealUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => { sealImg = img; renderCanvas(); };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function renderCanvas() {
+      const width = 600;
+      const height = 400;
+      const bannerHeight = 130;
+      const bannerTop = height - bannerHeight; // Y = 270
+      const accentHeight = 5;
+      const usableBannerTop = bannerTop + accentHeight; // Y = 275
+      const usableBannerHeight = bannerHeight - accentHeight; // 125px
+
+      ctx.clearRect(0, 0, width, height);
+
+      // 1. Draw Map Background (Object-Fit Cover: Preserves Aspect Ratio without Stretches)
+      if (bgImg) {
+        const targetW = width;
+        const targetH = bannerTop; // 270px
+        const targetAR = targetW / targetH;
+        const imgAR = bgImg.naturalWidth / bgImg.naturalHeight;
+
+        let sWidth = bgImg.naturalWidth;
+        let sHeight = bgImg.naturalHeight;
+        let sx = 0;
+        let sy = 0;
+
+        if (imgAR > targetAR) {
+          // Screenshot is wider than target ratio -> crop left & right
+          sWidth = bgImg.naturalHeight * targetAR;
+          sx = (bgImg.naturalWidth - sWidth) / 2;
+        } else {
+          // Screenshot is taller than target ratio -> crop top & bottom
+          sHeight = bgImg.naturalWidth / targetAR;
+          sy = (bgImg.naturalHeight - sHeight) / 2;
+        }
+
+        ctx.drawImage(bgImg, sx, sy, sWidth, sHeight, 0, 0, targetW, targetH);
+      } else {
+        // Default Dark Slate Grid
+        ctx.fillStyle = '#243B43';
+        ctx.fillRect(0, 0, width, bannerTop);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < width; x += 30) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, bannerTop); ctx.stroke();
+        }
+        for (let y = 0; y < bannerTop; y += 30) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+        }
+      }
+
+      // 2. Solid Footer Banner (100% Opaque Slate #385A66)
+      ctx.fillStyle = '#385A66';
+      ctx.fillRect(0, bannerTop, width, bannerHeight);
+
+      // 3. Accent Top Line
+      const accentColor = document.getElementById('accentColor').value;
+      ctx.fillStyle = accentColor;
+      ctx.fillRect(0, bannerTop, width, accentHeight);
+
+      // 4. Draw City Seal
+      const boxSize = 90;
+      const sealX = 20;
+      const sealY = usableBannerTop + (usableBannerHeight - boxSize) / 2;
+
+      if (sealImg && sealImg.complete && sealImg.naturalWidth !== 0) {
+        const imgWidth = sealImg.naturalWidth;
+        const imgHeight = sealImg.naturalHeight;
+        const aspectRatio = imgWidth / imgHeight;
+
+        let drawWidth = boxSize;
+        let drawHeight = boxSize;
+
+        if (aspectRatio > 1) {
+          drawHeight = boxSize / aspectRatio;
+        } else {
+          drawWidth = boxSize * aspectRatio;
+        }
+
+        const offsetX = sealX + (boxSize - drawWidth) / 2;
+        const offsetY = sealY + (boxSize - drawHeight) / 2;
+
+        ctx.drawImage(sealImg, offsetX, offsetY, drawWidth, drawHeight);
+      }
+
+      // 5. Text Centering & Rendering
+      const titleText = document.getElementById('layerTitle').value || 'Layer Title';
+      const categoryText = (document.getElementById('categoryTag').value || 'CATEGORY').toUpperCase();
+      const textX = 130;
+      const maxTextWidth = 440;
+
+      const titleFontSize = 22;
+      const titleLineHeight = 26;
+      ctx.font = `700 ${titleFontSize}px Montserrat, sans-serif`;
+
+      const words = titleText.split(' ');
+      const titleLines = [];
+      let currentLine = '';
+
+      for (let i = 0; i < words.length; i++) {
+        let testLine = currentLine ? currentLine + ' ' + words[i] : words[i];
+        if (ctx.measureText(testLine).width > maxTextWidth && currentLine !== '') {
+          titleLines.push(currentLine);
+          currentLine = words[i];
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) titleLines.push(currentLine);
+
+      const displayTitleLines = titleLines.slice(0, 2);
+
+      const tagFontSize = 13;
+      const tagToTitleGap = 6;
+      const totalTitleHeight = displayTitleLines.length * titleLineHeight;
+      const totalTextBlockHeight = tagFontSize + tagToTitleGap + totalTitleHeight;
+
+      const startY = usableBannerTop + (usableBannerHeight - totalTextBlockHeight) / 2;
+
+      ctx.textBaseline = 'top';
+
+      // Category Tag
+      ctx.fillStyle = accentColor;
+      ctx.font = `800 ${tagFontSize}px Montserrat, sans-serif`;
+      ctx.fillText(categoryText, textX, startY);
+
+      // Title Lines
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = `700 ${titleFontSize}px Montserrat, sans-serif`;
+      let currentY = startY + tagFontSize + tagToTitleGap;
+
+      for (let i = 0; i < displayTitleLines.length; i++) {
+        ctx.fillText(displayTitleLines[i], textX, currentY);
+        currentY += titleLineHeight;
+      }
+    }
+
+    function downloadThumbnail() {
+      const title = document.getElementById('layerTitle').value.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const link = document.createElement('a');
+      link.download = `${title || 'agol'}_thumbnail.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    window.onload = () => {
+      loadSealFromUrl();
+    };
+    document.fonts.ready.then(renderCanvas);
+  </script>
+</body>
+</html>
